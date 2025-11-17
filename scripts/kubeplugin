@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+print_usage() {
+  cat <<EOF
+kubectl kubeplugin - show CPU and memory usage for pods in a namespace
+
+Usage:
+  kubectl kubeplugin [NAMESPACE]
+
+If NAMESPACE is not provided, "default" is used.
+
+Examples:
+  # Pods usage in default namespace
+  kubectl kubeplugin
+
+  # Pods usage in kube-system namespace
+  kubectl kubeplugin kube-system
+EOF
+}
+
+# Help flags
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  print_usage
+  exit 0
+fi
+
+# Namespace: first argument or "default"
+NAMESPACE="${1:-default}"
+
+# Check kubectl presence
+if ! command -v kubectl >/dev/null 2>&1; then
+  echo "Error: kubectl is not installed or not in PATH" >&2
+  exit 1
+fi
+
+# Get metrics for pods in the namespace (requires metrics-server)
+if ! METRICS_OUTPUT="$(kubectl top pods -n "${NAMESPACE}" --no-headers 2>/dev/null)"; then
+  echo "Error: failed to get metrics for namespace '${NAMESPACE}'." >&2
+  echo "Make sure the namespace exists and metrics-server is installed in the cluster." >&2
+  exit 1
+fi
+
+# Print CSV header
+echo "Resource,Namespace,Name,CPU,Memory"
+
+# Transform 'kubectl top' output to the required format
+# Expected columns: NAME CPU(cores) MEMORY(bytes)
+awk -v ns="${NAMESPACE}" 'BEGIN {OFS=","} {print "pod", ns, $1, $2, $3}' <<< "${METRICS_OUTPUT}"
+
